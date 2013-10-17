@@ -10,25 +10,33 @@
 #include <stdbool.h>
 
 
-#define NUM_PEERS 10
+#define NUM_PEERS 2
 #define BUFSIZE 1024
 #define MCAST_ADDR "239.192.1.100"
 
 
 typedef struct server {
-	char server_id[BUFSIZE];
+	//char server_id[BUFSIZE];
+	char* server_id;
 	struct sockaddr_in addr;
-	bool on;
+	//bool on;
 	double latency;
 	double bw;
 	double avail_cpu;
 } server_info;
+
+typedef struct serverlist {
+	server_info s_info;
+	bool occupied;
+} serverlist_info;
 	
 typedef struct thread_opts {
 	int sock;
 	int message_id;
 	uint16_t udp_port;
 } thread_opts_t;
+
+serverlist_info _servers[NUM_PEERS];
 
 static int create_sock(const char *udp_addr, const uint16_t port)
 {
@@ -88,8 +96,33 @@ static void *start_discovery_request(void *opt)
 	pthread_exit(NULL);
 }
 
-
 /////////////////discovery reply message receive///////////////////////////////////////
+static void update_serverlist(char* buf, int id_size)
+{
+	int i;
+	bool in = false;
+	for (i = 0; i < NUM_PEERS; i++) {
+		if (_servers[i].occupied == true) {
+			if (strncmp(_servers[i].s_info.server_id, buf, id_size) == 0) {
+				printf("this server is already in the list, %s\n", buf);
+				in = true;
+				break;
+			}
+		}
+	}
+	if (in == false) {
+		for (i = 0; i < NUM_PEERS; i++) {
+			if (_servers[i].occupied == false) {
+				printf("this server joins newly, %s\n", buf);
+				_servers[i].occupied = true;
+				_servers[i].s_info.server_id = buf;
+				break;
+			}
+		}
+	}
+	printf("update completed\n");
+}
+
 static int discovery_reply_recv(thread_opts_t *opts)
 {
 	char buf[BUFSIZE];
@@ -99,7 +132,7 @@ static int discovery_reply_recv(thread_opts_t *opts)
 
 	while(1) {
 		rcount = recvfrom(opts->sock, buf, sizeof(buf), 0, (struct sockaddr*) &addr, &addr_len);
-		printf("server name: %s\n", buf);
+		update_serverlist(buf, 7);
 	}
 	return 0;
 }
@@ -118,9 +151,18 @@ int check_point(void)
 	return 0;
 }
 
+static void init_peerlist()
+{
+	int i;
+	for (i = 0; i < NUM_PEERS; i++) {
+		_servers[i].occupied = false;
+	}
+}
+
 int main(int argc, char *argv[])
 {
-	server_info servers;
+	//serverlist_info servers[NUM_PEERS];
+	init_peerlist();
 	int sock = create_sock(NULL, 5555);
 	thread_opts_t opts;
 	opts.udp_port = 51234;
