@@ -8,12 +8,11 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
-
+#include <sys/time.h>
 
 #define NUM_PEERS 2
 #define BUFSIZE 1024
 #define MCAST_ADDR "239.192.1.100"
-
 
 typedef struct server {
 	char server_id[BUFSIZE];
@@ -37,6 +36,15 @@ typedef struct thread_opts {
 } thread_opts_t;
 
 static serverlist_info _servers[NUM_PEERS];
+
+static double
+sub_timeval(const struct timeval *t1, const struct timeval *t2)
+{
+    long int long_diff = (t2->tv_sec * 1000000 + t2->tv_usec) - 
+        (t1->tv_sec * 1000000 + t1->tv_usec);
+    double diff = (double)long_diff/1000000;
+    return diff;
+}
 
 static int create_sock(const char *udp_addr, const uint16_t port)
 {
@@ -63,6 +71,25 @@ static int create_sock(const char *udp_addr, const uint16_t port)
 	}
 
 	return sock;
+}
+
+static int tcp_connect(struct sockaddr_in *addr, const int count)
+{
+	char buf[BUFSIZE];
+	int sock;
+	socklen_t addr_len = sizeof(*addr);
+
+	if ((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
+		fprintf(stderr, "socket failed\n");
+		return -1;
+	}
+
+	if (connect(sock, (struct sockaddr *) addr, addr_len) < 0) {
+		fprintf(stderr, "connect failed\n");
+		return -1;
+	}
+
+	return 0;
 }
 
 /////////////////discovery request message send///////////////////////////////////////
@@ -97,10 +124,27 @@ static void *start_discovery_request(void *opt)
 }
 
 /////////////discovery reply message receive and measure network performance///////////////
+static double get_tcp_latency(struct sockaddr_in *addr)
+{
+	double diff;
+	struct timeval t1, t2;
+
+	gettimeofday(&t1, NULL);
+	tcp_connect(addr, 1);
+	gettimeofday(&t2, NULL);
+
+	diff = sub_timeval(&t1, &t2);
+
+	return diff;
+}
+
+/*
 static void measure_network(void)
 {
 	printf("measure network latency and bandwidth\n");
 }
+*/
+
 static void update_serverlist(char* buf, struct sockaddr_in *addr)
 {
 	char tmp[BUFSIZE];
@@ -126,6 +170,8 @@ static void update_serverlist(char* buf, struct sockaddr_in *addr)
 				_servers[i].occupied = true;
 				strncpy(_servers[i].s_info.server_id, buf, id_size);
 				_servers[i].s_info.addr = *addr;
+				_servers[i].s_info.latency = get_tcp_latency(addr);
+				printf("latency: %f\n", _servers[i].s_info.latency);
 				break;
 			}
 		}
@@ -143,7 +189,6 @@ static int discovery_reply_recv(thread_opts_t *opts)
 	while(1) {
 		rcount = recvfrom(opts->sock, buf, sizeof(buf), 0, (struct sockaddr*) &addr, &addr_len);
 		update_serverlist(buf, &addr);
-		measure_network();
 		
 	}
 	return 0;
