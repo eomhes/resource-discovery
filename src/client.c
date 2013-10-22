@@ -16,8 +16,8 @@
 
 
 typedef struct server {
-	//char server_id[BUFSIZE];
-	char* server_id;
+	char server_id[BUFSIZE];
+	//char* server_id;
 	struct sockaddr_in addr;
 	//bool on;
 	double latency;
@@ -36,7 +36,7 @@ typedef struct thread_opts {
 	uint16_t udp_port;
 } thread_opts_t;
 
-serverlist_info _servers[NUM_PEERS];
+static serverlist_info _servers[NUM_PEERS];
 
 static int create_sock(const char *udp_addr, const uint16_t port)
 {
@@ -84,7 +84,7 @@ static int discovery_request_send(thread_opts_t *opts)
 			return -1;
 		}
 		opts->message_id++;
-		sleep(5);
+		sleep(30);
 	}
 	return 0;
 }
@@ -96,9 +96,15 @@ static void *start_discovery_request(void *opt)
 	pthread_exit(NULL);
 }
 
-/////////////////discovery reply message receive///////////////////////////////////////
-static void update_serverlist(char* buf, int id_size)
+/////////////discovery reply message receive and measure network performance///////////////
+static void measure_network(void)
 {
+	printf("measure network latency and bandwidth\n");
+}
+static void update_serverlist(char* buf, struct sockaddr_in *addr)
+{
+	char tmp[BUFSIZE];
+	int id_size = 7;
 	int i;
 	bool in = false;
 	for (i = 0; i < NUM_PEERS; i++) {
@@ -108,6 +114,9 @@ static void update_serverlist(char* buf, int id_size)
 				in = true;
 				break;
 			}
+			else {
+				printf("nope, not this server\n");
+			}
 		}
 	}
 	if (in == false) {
@@ -115,7 +124,8 @@ static void update_serverlist(char* buf, int id_size)
 			if (_servers[i].occupied == false) {
 				printf("this server joins newly, %s\n", buf);
 				_servers[i].occupied = true;
-				_servers[i].s_info.server_id = buf;
+				strncpy(_servers[i].s_info.server_id, buf, id_size);
+				_servers[i].s_info.addr = *addr;
 				break;
 			}
 		}
@@ -132,7 +142,9 @@ static int discovery_reply_recv(thread_opts_t *opts)
 
 	while(1) {
 		rcount = recvfrom(opts->sock, buf, sizeof(buf), 0, (struct sockaddr*) &addr, &addr_len);
-		update_serverlist(buf, 7);
+		update_serverlist(buf, &addr);
+		measure_network();
+		
 	}
 	return 0;
 }
@@ -146,7 +158,7 @@ static void *start_reply_listen(void *opt)
 
 int check_point(void)
 {
-	printf("heungsik is genius!!!\n");
+	printf("start multicast resource discovery process!!!\n");
 	
 	return 0;
 }
