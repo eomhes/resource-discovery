@@ -18,7 +18,7 @@ typedef struct server {
 	char server_id[BUFSIZE];
 	//char* server_id;
 	struct sockaddr_in addr;
-	//bool on;
+	bool tcp_opened;
 	double latency;
 	double bw;
 	double avail_cpu;
@@ -30,9 +30,11 @@ typedef struct serverlist {
 } serverlist_info;
 	
 typedef struct thread_opts {
-	int sock;
+	int mcast_sock;
+	int tcp_sock;
 	int message_id;
-	uint16_t udp_port;
+	uint16_t mcast_port;
+	uint16_t tcp_port;
 } thread_opts_t;
 
 static serverlist_info _servers[NUM_PEERS];
@@ -46,7 +48,7 @@ sub_timeval(const struct timeval *t1, const struct timeval *t2)
     return diff;
 }
 
-static int create_sock(const char *udp_addr, const uint16_t port)
+static int mcast_create_sock(const char *udp_addr, const uint16_t port)
 {
 	int sock, optval = 1;
 	int optlen = sizeof(optval);
@@ -72,17 +74,24 @@ static int create_sock(const char *udp_addr, const uint16_t port)
 
 	return sock;
 }
-
-static int tcp_connect(struct sockaddr_in *addr, const int count)
+static int tcp_create_sock(void)
 {
-	char buf[BUFSIZE];
 	int sock;
-	socklen_t addr_len = sizeof(*addr);
 
 	if ((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
 		fprintf(stderr, "socket failed\n");
 		return -1;
 	}
+
+	return sock;
+}
+
+static int tcp_connect(struct sockaddr_in *addr, int sd, uint16_t port)
+{
+	int sock = sd;
+
+	socklen_t addr_len = sizeof(*addr);
+	((struct sockaddr_in*) addr)->sin_port = htons(port);
 
 	if (connect(sock, (struct sockaddr *) addr, addr_len) < 0) {
 		fprintf(stderr, "connect failed\n");
@@ -101,17 +110,17 @@ static int discovery_request_send(thread_opts_t *opts)
 
 	memset(&addr, 0, addr_len);
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(opts->udp_port);
+	addr.sin_port = htons(opts->mcast_port);
 	addr.sin_addr.s_addr = inet_addr(MCAST_ADDR);
 	
 	while(1) {
 		sprintf(message, "hello_%d", opts->message_id);
-		if (sendto(opts->sock, message, 11, 0, (struct sockaddr*) &addr, addr_len) < 0) {
+		if (sendto(opts->mcast_sock, message, 11, 0, (struct sockaddr*) &addr, addr_len) < 0) {
 			fprintf(stderr, "sendtofailed\n");
 			return -1;
 		}
 		opts->message_id++;
-		sleep(30);
+		sleep(5);
 	}
 	return 0;
 }
@@ -123,29 +132,15 @@ static void *start_discovery_request(void *opt)
 	pthread_exit(NULL);
 }
 
+/////////////network latency and bandwidth measuremnet///////////////
+
+//static void sendMessage(struct sockaddr_in *addr)
+//{
+//	char ping;
+//	if (send(
+
 /////////////discovery reply message receive and measure network performance///////////////
-static double get_tcp_latency(struct sockaddr_in *addr)
-{
-	double diff;
-	struct timeval t1, t2;
-
-	gettimeofday(&t1, NULL);
-	tcp_connect(addr, 1);
-	gettimeofday(&t2, NULL);
-
-	diff = sub_timeval(&t1, &t2);
-
-	return diff;
-}
-
-/*
-static void measure_network(void)
-{
-	printf("measure network latency and bandwidth\n");
-}
-*/
-
-static void update_serverlist(char* buf, struct sockaddr_in *addr)
+static void update_serverlist(char* buf, struct sockaddr_in *addr, thread_opts_t *opts)
 {
 	char tmp[BUFSIZE];
 	int id_size = 7;
@@ -158,20 +153,18 @@ static void update_serverlist(char* buf, struct sockaddr_in *addr)
 				in = true;
 				break;
 			}
-			else {
-				printf("nope, not this server\n");
-			}
 		}
 	}
 	if (in == false) {
 		for (i = 0; i < NUM_PEERS; i++) {
 			if (_servers[i].occupied == false) {
 				printf("this server joins newly, %s\n", buf);
-				_servers[i].occupied = true;
 				strncpy(_servers[i].s_info.server_id, buf, id_size);
+				tcp_connect(addr, opts->tcp_sock, opts->tcp_port);
+				send(opts->tcp_sock,"exit",5,0);
+				_servers[i].occupied = true;
 				_servers[i].s_info.addr = *addr;
-				_servers[i].s_info.latency = get_tcp_latency(addr);
-				printf("latency: %f\n", _servers[i].s_info.latency);
+				_servers[i].s_info.tcp_opened = true;
 				break;
 			}
 		}
@@ -187,8 +180,8 @@ static int discovery_reply_recv(thread_opts_t *opts)
 	socklen_t addr_len = sizeof(addr);
 
 	while(1) {
-		rcount = recvfrom(opts->sock, buf, sizeof(buf), 0, (struct sockaddr*) &addr, &addr_len);
-		update_serverlist(buf, &addr);
+		rcount = recvfrom(opts->mcast_sock, buf, sizeof(buf), 0, (struct sockaddr*) &addr, &addr_len);
+		update_serverlist(buf, &addr, opts);
 		
 	}
 	return 0;
@@ -213,17 +206,18 @@ static void init_peerlist()
 	int i;
 	for (i = 0; i < NUM_PEERS; i++) {
 		_servers[i].occupied = false;
+		_servers[i].s_info.tcp_opened = false;
 	}
 }
 
 int main(int argc, char *argv[])
 {
-	//serverlist_info servers[NUM_PEERS];
 	init_peerlist();
-	int sock = create_sock(NULL, 5555);
 	thread_opts_t opts;
-	opts.udp_port = 51234;
-	opts.sock = sock;
+	opts.mcast_sock = mcast_create_sock(NULL, 5555);
+	opts.tcp_sock = tcp_create_sock();
+	opts.mcast_port = 51233;
+	opts.tcp_port = 51234;
 	opts.message_id = 0;
 
 	pthread_t discovery_request, discovery_reply;

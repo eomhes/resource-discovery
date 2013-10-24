@@ -100,6 +100,7 @@ static void *start_mcast_thread(void *data)
 static void *
 handle_client(void *arg)
 {
+	printf("created handle_clent\n");
     int buf_size, tcp_sock = (int) arg;
     char buff[BUFSIZE];
     char *tmp_buf, *big_buf = NULL, *buf = buff;
@@ -110,6 +111,7 @@ handle_client(void *arg)
             fprintf(stderr, "recv failed\n");
             break;
         }
+		printf("buf: %s", buf);
         tmp_buf = buf;
 
 
@@ -150,7 +152,6 @@ handle_client(void *arg)
             if ((nsend = send(tcp_sock, buf + i, idx, 0)) < 1) {
                 fprintf(stderr, "send failed\n");
                 close(tcp_sock);
-                return -1;
             }
             idx -= nsend;
             i += nsend;
@@ -178,6 +179,7 @@ handle_client(void *arg)
 static int
 tcp_listen(const char *ip, const uint16_t port)
 {
+	char buf[BUFSIZE];
     int sock, cli_sock, opt;
     struct sockaddr_in addr;
     socklen_t addr_len = sizeof(addr);
@@ -209,23 +211,46 @@ tcp_listen(const char *ip, const uint16_t port)
         close(sock);
         return -1;
     }
+	
+	while (1) {	
+		if ((cli_sock = accept(sock, (struct sockaddr *) &addr, &addr_len)) < 0) {
+			fprintf(stderr, "accept failed\n");
+			close(sock);
+			return -1;
+		}
+		else {
+			printf("tcp connection accepted!!\n");
+		}
 
+		if (recv(cli_sock, buf, sizeof(buf), 0) < 0) {
+			fprintf(stderr, "recv failed\n");
+		}
+		else {
+			printf("received %s\n", buf);
+		}
+	}
+
+
+	//printf("get tcp packet\n");
+	
+	/*
     while (1) {
         cli_sock = accept(sock, (struct sockaddr *) &addr, &addr_len);
+		printf("get tcp packet\n");
         if (cli_sock < 0) {
             fprintf(stderr, "accept failed\n");
             break;
         }
-
         if (pthread_create(&thread_id, NULL, handle_client, 
             (void *) cli_sock) != 0) {
             fprintf(stderr, "pthread_create failed\n");
             close(cli_sock);
+			printf("created one more thread\n");
             break;
         }
 
         pthread_detach(thread_id);
-    }
+    }*/
     return 0;
 }
 
@@ -242,7 +267,7 @@ int main(int argc, char **argv)
 	thread_opts_t opts;
 	opts.udp_port = 51234;
 	opts.tcp_port = 51234;
-	opts.sock = create_mcast_sock(NULL, 51234);
+	opts.sock = create_mcast_sock(NULL, 51233);
 
 	pthread_t mcast_thread;
 	pthread_create(&mcast_thread, NULL, start_mcast_thread, &opts);
