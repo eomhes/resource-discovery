@@ -222,7 +222,7 @@ tcp_listen(const char *ip, const uint16_t port)
 			printf("tcp connection accepted!!\n");
 		}
 
-		if (recv(cli_sock, buf, sizeof(buf), 0) < 0) {
+		if (recv(cli_sock, buf, sizeof(buf), 0) < -1) {
 			fprintf(stderr, "recv failed\n");
 		}
 		else {
