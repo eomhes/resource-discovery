@@ -212,7 +212,7 @@ tcp_listen(const char *ip, const uint16_t port)
         return -1;
     }
 	
-	while (1) {	
+	//while (1) {	
 		if ((cli_sock = accept(sock, (struct sockaddr *) &addr, &addr_len)) < 0) {
 			fprintf(stderr, "accept failed\n");
 			close(sock);
@@ -222,12 +222,13 @@ tcp_listen(const char *ip, const uint16_t port)
 			printf("tcp connection accepted!!\n");
 		}
 
+	while (1) {	
 		if (recv(cli_sock, buf, sizeof(buf), 0) < 1) {
 			fprintf(stderr, "recv failed\n");
 		}
-		else {
-			printf("received %s\n", buf);
-		}
+		//else {
+		//	printf("received %s\n", buf);
+		//}
 	}
 
 
