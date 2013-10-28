@@ -222,6 +222,9 @@ tcp_listen(const char *ip, const uint16_t port)
 		if (read(cli_sock, buf, sizeof(buf)) < 1) {
 			fprintf(stderr, "write failed\n");
 		}
+		else {
+			printf("I received the packets!!!\n");
+		}
 	}
 
     return 0;
