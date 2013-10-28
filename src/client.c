@@ -124,34 +124,31 @@ static void *start_discovery_request(void *opt)
 	pthread_exit(NULL);
 }
 
-/////////////network latency and bandwidth measuremnet///////////////
-
-//TODO 
-//network bandwidth and latency checking code in here!!!
-//
-
 /////////////discovery reply message receive and measure network performance///////////////
 static void update_serverlist(char* buf, struct sockaddr_in *addr, thread_opts_t *opts)
 {
-	struct timeval t1, t2;
+	struct timeval t1, t2, t3;
 
-	char tmp[BUFSIZE * 65];
+	char tmp[BUFSIZE*65];
 	int id_size = 7;
 	int i;
+	int nsend;
 	bool in = false;
 	for (i = 0; i < NUM_PEERS; i++) {
 		if (_servers[i].occupied == true) {
 			if (strncmp(_servers[i].s_info.server_id, buf, id_size) == 0) {
 				printf("This server is already in the list, %s\n", buf);
 				gettimeofday(&t1, NULL);
-				send(_servers[i].tcp_sock, tmp, sizeof(tmp), 0);
+				_servers[i].tcp_sock = tcp_connect(addr, opts->tcp_port);
 				gettimeofday(&t2, NULL);
-
-				printf("bandwidth: %ld %f\n", sizeof(tmp), (sizeof(tmp)/sub_timeval(&t1, &t2))/BUFSIZE);
-
-				//if (send(_servers[i].tcp_sock,"exit",5,0) < 0) {
-				//	fprintf(stderr, "send failed\n");
-				//}
+				if ((nsend = write(_servers[i].tcp_sock, tmp, sizeof(tmp))) < 0) {
+					fprintf(stderr, "write failed\n");
+				}
+				gettimeofday(&t3, NULL);
+				double latency = sub_timeval(&t1, &t2);
+				double diff = sub_timeval(&t2, &t3);
+				printf("latency: %f\n", latency);
+				printf("bandwidth: %f MB/s\n", (double)sizeof(tmp)/(diff * BUFSIZE * BUFSIZE) );
 				in = true;
 				break;
 			}
@@ -162,13 +159,17 @@ static void update_serverlist(char* buf, struct sockaddr_in *addr, thread_opts_t
 			if (_servers[i].occupied == false) {
 				printf("This server joins newly, %s\n", buf);
 				strncpy(_servers[i].s_info.server_id, buf, id_size);
-				_servers[i].tcp_sock = tcp_connect(addr, opts->tcp_port);
-				sleep(5);
 				gettimeofday(&t1, NULL);
-				send(_servers[i].tcp_sock, tmp, sizeof(tmp), 0);
+				_servers[i].tcp_sock = tcp_connect(addr, opts->tcp_port);
 				gettimeofday(&t2, NULL);
-
-				printf("bandwidth: %ld %f\n", sizeof(tmp), (sizeof(tmp)/sub_timeval(&t1, &t2))/BUFSIZE);
+				if ((nsend = write(_servers[i].tcp_sock, tmp, sizeof(tmp))) < 0) {
+					fprintf(stderr, "write failed\n");
+				}
+				gettimeofday(&t3, NULL);
+				double latency = sub_timeval(&t1, &t2);
+				double diff = sub_timeval(&t2, &t3);
+				printf("latency: %f\n", latency);
+				printf("bandwidth: %f MB/s\n", (double)sizeof(tmp)/(diff * BUFSIZE * BUFSIZE));
 				_servers[i].occupied = true;
 				_servers[i].s_info.addr = *addr;
 				break;

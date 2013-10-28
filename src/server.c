@@ -179,7 +179,7 @@ handle_client(void *arg)
 static int
 tcp_listen(const char *ip, const uint16_t port)
 {
-	char buf[BUFSIZE];
+	char buf[BUFSIZE*65];
     int sock, cli_sock, opt;
     struct sockaddr_in addr;
     socklen_t addr_len = sizeof(addr);
@@ -212,46 +212,18 @@ tcp_listen(const char *ip, const uint16_t port)
         return -1;
     }
 	
-	//while (1) {	
+	while (1) {	
 		if ((cli_sock = accept(sock, (struct sockaddr *) &addr, &addr_len)) < 0) {
 			fprintf(stderr, "accept failed\n");
 			close(sock);
 			return -1;
 		}
-		else {
-			printf("tcp connection accepted!!\n");
-		}
 
-	while (1) {	
-		if (recv(cli_sock, buf, sizeof(buf), 0) < 1) {
-			fprintf(stderr, "recv failed\n");
+		if (read(cli_sock, buf, sizeof(buf)) < 1) {
+			fprintf(stderr, "write failed\n");
 		}
-		//else {
-		//	printf("received %s\n", buf);
-		//}
 	}
 
-
-	//printf("get tcp packet\n");
-	
-	/*
-    while (1) {
-        cli_sock = accept(sock, (struct sockaddr *) &addr, &addr_len);
-		printf("get tcp packet\n");
-        if (cli_sock < 0) {
-            fprintf(stderr, "accept failed\n");
-            break;
-        }
-        if (pthread_create(&thread_id, NULL, handle_client, 
-            (void *) cli_sock) != 0) {
-            fprintf(stderr, "pthread_create failed\n");
-            close(cli_sock);
-			printf("created one more thread\n");
-            break;
-        }
-
-        pthread_detach(thread_id);
-    }*/
     return 0;
 }
 
