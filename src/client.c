@@ -10,7 +10,7 @@
 #include <stdbool.h>
 #include <sys/time.h>
 
-#define NUM_PEERS 2
+#define NUM_SERVERS 2
 #define BUFSIZE 1024
 #define MCAST_ADDR "239.192.1.100"
 
@@ -35,7 +35,7 @@ typedef struct thread_opts {
 	int message_id;
 } thread_opts_t;
 
-static serverlist_info _servers[NUM_PEERS];
+static serverlist_info _servers[NUM_SERVERS];
 
 static double
 sub_timeval(const struct timeval *t1, const struct timeval *t2)
@@ -134,7 +134,7 @@ static void update_serverlist(char* buf, struct sockaddr_in *addr, thread_opts_t
 	int i;
 	int nsend;
 	bool in = false;
-	for (i = 0; i < NUM_PEERS; i++) {
+	for (i = 0; i < NUM_SERVERS; i++) {
 		if (_servers[i].occupied == true) {
 			if (strncmp(_servers[i].s_info.server_id, buf, id_size) == 0) {
 				printf("This server is already in the list, %s\n", buf);
@@ -155,7 +155,7 @@ static void update_serverlist(char* buf, struct sockaddr_in *addr, thread_opts_t
 		}
 	}
 	if (in == false) {
-		for (i = 0; i < NUM_PEERS; i++) {
+		for (i = 0; i < NUM_SERVERS; i++) {
 			if (_servers[i].occupied == false) {
 				printf("This server joins newly, %s\n", buf);
 				strncpy(_servers[i].s_info.server_id, buf, id_size);
@@ -206,10 +206,10 @@ int check_point(void)
 	return 0;
 }
 
-static void init_peerlist()
+static void init_serverlist()
 {
 	int i;
-	for (i = 0; i < NUM_PEERS; i++) {
+	for (i = 0; i < NUM_SERVERS; i++) {
 		_servers[i].tcp_sock = -1;
 		_servers[i].occupied = false;
 	}
@@ -217,7 +217,7 @@ static void init_peerlist()
 
 int main(int argc, char *argv[])
 {
-	init_peerlist();
+	init_serverlist();
 	thread_opts_t opts;
 	opts.mcast_sock = mcast_create_sock(NULL, 5555);
 	opts.mcast_port = 51233;
@@ -227,8 +227,8 @@ int main(int argc, char *argv[])
 	pthread_t discovery_request, discovery_reply;
 	pthread_create(&discovery_request, NULL, start_discovery_request, &opts);
 	pthread_create(&discovery_reply, NULL, start_reply_listen, &opts);
-
-	check_point();
+	init_serverlist();
+	//check_point();
 	pthread_join(discovery_request, NULL);
 	pthread_join(discovery_reply, NULL);
 

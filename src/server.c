@@ -190,6 +190,7 @@ tcp_listen(const char *ip, const uint16_t port)
         return -1;
     }
 
+	opt = 1;
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         fprintf(stderr, "setsockopt failed\n");
         return -1;
@@ -223,8 +224,7 @@ tcp_listen(const char *ip, const uint16_t port)
 			fprintf(stderr, "write failed\n");
 		}
 		else {
-			printf("I received the packets!!!\n");
-			printf("I received the packets 2!!!\n");
+			printf("I received the packets.\n");
 		}
 	}
 
@@ -246,10 +246,11 @@ int main(int argc, char **argv)
 	opts.tcp_port = 51234;
 	opts.sock = create_mcast_sock(NULL, 51233);
 
-	pthread_t mcast_thread;
+	pthread_t mcast_thread, tcp_thread;
 	pthread_create(&mcast_thread, NULL, start_mcast_thread, &opts);
+	pthread_create(&tcp_thread, NULL, start_tcp_thread, &opts);
 
-	start_tcp_thread(&opts);
+	//start_tcp_thread(&opts);
 	pthread_join(mcast_thread, NULL);
 
 	return 0;
