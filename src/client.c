@@ -9,9 +9,15 @@
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <sys/time.h>
+#include <math.h>
 
 #define NUM_SERVERS 2
 #define MAX_NET_HISTORY 10
+
+#define LOW_TIMER 60
+#define DEFAULT_TIMER 30
+#define HIGH_TIMER 15
+
 #define BUFSIZE 1024
 #define MCAST_ADDR "239.192.1.100"
 
@@ -24,8 +30,6 @@ typedef struct network {
 typedef struct server {
 	char server_id[BUFSIZE];
 	struct sockaddr_in addr;
-	//double latency;
-	//double bw;
 	network_info net_perf;
 	double avail_cpu;
 } server_info;
@@ -107,14 +111,45 @@ static int tcp_connect(struct sockaddr_in *addr,  uint16_t port)
 //TODO: Implement set_timer function(based on standard deviation of network performance)
 //      FSM-based adaptive timer that it will set different timer values according to stability of
 //      network performance such as latency and bandwidth  
+static double get_deviation()
+{
+	int i, j;
+	double mean, deviation;
+	//mean = 0.0;
+	deviation = 0.0;
+
+	for(i = 0; i < NUM_SERVERS; i++)
+	{
+		mean = 0.0;
+		deviation = 0.0;
+		for(j = 0; j < MAX_NET_HISTORY; j++)
+		{
+			mean += _servers[i].s_info.net_perf.latency[j];
+		}
+
+		mean = mean / MAX_NET_HISTORY;
+		
+		for(j = 0; j < MAX_NET_HISTORY; j++)
+		{
+			deviation += (_servers[i].s_info.net_perf.latency[j] - mean) * (_servers[i].s_info.net_perf.latency[j] - mean);
+		}
+		deviation = deviation / MAX_NET_HISTORY;
+		printf("deviation: %lf\n", (deviation/mean)*100);
+
+	}
+
+	return mean;
+}
+
 static int set_timer(int current_seq)
 {
-	printf("%d\n", current_seq);
 	if (current_seq < MAX_NET_HISTORY) {
 		return 2;
+		//return DEFAULT_TIMER;
 	}
 	else {
-		return 10;
+		get_deviation();
+		return 2;
 	}
 }
 
@@ -156,8 +191,8 @@ static void update_serverinfo(int num_server, double latency, double bandwidth, 
 	i = num_server;
 
 	if (m_seq < MAX_NET_HISTORY) {
-		_servers[i].s_info.net_perf.latency[m_seq % MAX_NET_HISTORY];
-		_servers[i].s_info.net_perf.bw[m_seq % MAX_NET_HISTORY];
+		_servers[i].s_info.net_perf.latency[m_seq % MAX_NET_HISTORY] = latency;
+		_servers[i].s_info.net_perf.bw[m_seq % MAX_NET_HISTORY] = bandwidth;
 	}
 	else {
 		for (j = 1; j < MAX_NET_HISTORY; j++) {
