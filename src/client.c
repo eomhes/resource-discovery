@@ -11,12 +11,12 @@
 #include <sys/time.h>
 #include <math.h>
 
-#define NUM_SERVERS 2
+#define NUM_SERVERS 2 
 #define MAX_NET_HISTORY 10
 
-#define LOW_TIMER 60
-#define DEFAULT_TIMER 30
-#define HIGH_TIMER 15
+#define LOW_TIMER 8
+#define DEFAULT_TIMER 4
+#define HIGH_TIMER 2
 
 #define BUFSIZE 1024
 #define MCAST_ADDR "239.192.1.100"
@@ -49,7 +49,7 @@ typedef struct thread_opts {
 
 static serverlist_info _servers[NUM_SERVERS];
 
-int _interval;
+int interval;
 
 static double
 sub_timeval(const struct timeval *t1, const struct timeval *t2)
@@ -109,47 +109,102 @@ static int tcp_connect(struct sockaddr_in *addr,  uint16_t port)
 
 /////////////////discovery request message send///////////////////////////////////////
 //TODO: Implement set_timer function(based on standard deviation of network performance)
-//      FSM-based adaptive timer that it will set different timer values according to stability of
+//      FSM-based timer that it will set different timer values according to stability of
 //      network performance such as latency and bandwidth  
 static double get_deviation()
 {
-	int i, j;
-	double mean, deviation;
-	//mean = 0.0;
-	deviation = 0.0;
+	int i, j, window;
+	double mean[NUM_SERVERS];
+	double deviation[NUM_SERVERS];
+	double ind_mean, ind_deviation, total_mean, total_deviation;
+
+	total_mean = 0.0;
+	total_deviation = 0.0;
 
 	for(i = 0; i < NUM_SERVERS; i++)
 	{
-		mean = 0.0;
-		deviation = 0.0;
-		for(j = 0; j < MAX_NET_HISTORY; j++)
-		{
-			mean += _servers[i].s_info.net_perf.latency[j];
+		ind_mean = 0.0;
+		ind_deviation = 0.0;
+
+		if(interval == LOW_TIMER) {
+			window = 5;
+		}
+		else if(interval == DEFAULT_TIMER) {
+			window = 8;
+		}
+		else {
+			window = 10;
 		}
 
-		mean = mean / MAX_NET_HISTORY;
+		for(j = MAX_NET_HISTORY - window; j < MAX_NET_HISTORY; j++)
+		{
+			ind_mean += _servers[i].s_info.net_perf.latency[j];
+		}
+
+		mean[i] = ind_mean / MAX_NET_HISTORY;
 		
-		for(j = 0; j < MAX_NET_HISTORY; j++)
+		for(j = MAX_NET_HISTORY - window; j < MAX_NET_HISTORY; j++)
 		{
-			deviation += (_servers[i].s_info.net_perf.latency[j] - mean) * (_servers[i].s_info.net_perf.latency[j] - mean);
+			ind_deviation += (_servers[i].s_info.net_perf.latency[j] - mean[i]) 
+			                    * (_servers[i].s_info.net_perf.latency[j] - mean[i]);
 		}
-		deviation = deviation / MAX_NET_HISTORY;
-		printf("deviation: %lf\n", (deviation/mean)*100);
-
+		deviation[i] = ind_deviation / MAX_NET_HISTORY;
 	}
 
-	return mean;
+	for(i = 0; i < NUM_SERVERS; i++)
+	{
+		total_deviation += (deviation[i] * 100 / mean[i]);
+	}
+
+	printf("percentage: %lf\n", total_deviation / NUM_SERVERS);
+
+	return (total_deviation / NUM_SERVERS);
 }
 
 static int set_timer(int current_seq)
 {
+	double percent_deviation;
+
 	if (current_seq < MAX_NET_HISTORY) {
-		return 2;
-		//return DEFAULT_TIMER;
+		return DEFAULT_TIMER;
 	}
 	else {
-		get_deviation();
-		return 2;
+		percent_deviation = get_deviation();
+		
+		if(percent_deviation < 0.05) {
+			if(interval == LOW_TIMER) {
+				printf("Stay in LOW TIMER\n");
+				
+				return LOW_TIMER;
+			}
+			else if(interval == DEFAULT_TIMER) {
+				printf("Go to LOW TIMER\n");
+
+				return LOW_TIMER;
+			}
+			else {
+				printf("Go to DEFAULT TIMER\n");
+
+				return DEFAULT_TIMER;
+			}
+		}
+		else {
+				if(interval == LOW_TIMER) {
+				printf("Go to DEFAULT TIMER\n");
+				
+				return DEFAULT_TIMER;
+			}
+			else if(interval == DEFAULT_TIMER) {
+				printf("Go to HIGH TIMER\n");
+
+				return HIGH_TIMER;
+			}
+			else {
+				printf("Stay in HIGH TIMER\n");
+
+				return HIGH_TIMER;
+			}
+		}
 	}
 }
 
@@ -170,10 +225,9 @@ static int discovery_request_send(thread_opts_t *opts)
 			fprintf(stderr, "sendtofailed\n");
 			return -1;
 		}
-		_interval = set_timer(opts->message_id);
+		interval = set_timer(opts->message_id);
 		opts->message_id++;
-		printf("%d\n", _interval);
-		sleep(_interval);
+		sleep(interval);
 	}
 	return 0;
 }
@@ -201,7 +255,7 @@ static void update_serverinfo(int num_server, double latency, double bandwidth, 
 		_servers[i].s_info.net_perf.latency[MAX_NET_HISTORY-1] = latency;
 		_servers[i].s_info.net_perf.bw[MAX_NET_HISTORY-1] = bandwidth;
 	} 
-	printf("new inserted slot and check number: %d\n", _servers[i].s_info.net_perf.slot_occupied); 
+	//printf("new inserted slot and check number: %d\n", _servers[i].s_info.net_perf.slot_occupied); 
 	_servers[i].s_info.net_perf.slot_occupied++;
 }
 
@@ -210,7 +264,7 @@ static void check_server(char* buf, struct sockaddr_in *addr, thread_opts_t *opt
 {
 	struct timeval t1, t2, t3;
 
-	char tmp[BUFSIZE*65];
+	char tmp[BUFSIZE * 65];
 	int id_size = 7;
 	int i, nsend, check_seq;
 	bool in = false;
@@ -218,7 +272,7 @@ static void check_server(char* buf, struct sockaddr_in *addr, thread_opts_t *opt
 	for (i = 0; i < NUM_SERVERS; i++) {
 		if (_servers[i].occupied == true) {
 			if (strncmp(_servers[i].s_info.server_id, buf, id_size) == 0) {
-				printf("This server is already in the list, %s\n", buf);
+				//printf("This server is already in the list, %s\n", buf);
 				gettimeofday(&t1, NULL);
 				_servers[i].tcp_sock = tcp_connect(addr, opts->tcp_port);
 				gettimeofday(&t2, NULL);
@@ -230,8 +284,8 @@ static void check_server(char* buf, struct sockaddr_in *addr, thread_opts_t *opt
 				double bw = (double)sizeof(tmp)/(sub_timeval(&t2, &t3) * BUFSIZE * BUFSIZE);
 				check_seq = _servers[i].s_info.net_perf.slot_occupied;
 				update_serverinfo(i, latency, bw, check_seq);
-				printf("latency: %f\n", latency);
-				printf("bandwidth: %f MB/s\n", bw);
+				//printf("latency: %f\n", latency);
+				//printf("bandwidth: %f MB/s\n", bw);
 				in = true;
 				break;
 			}
@@ -240,7 +294,7 @@ static void check_server(char* buf, struct sockaddr_in *addr, thread_opts_t *opt
 	if (in == false) {
 		for (i = 0; i < NUM_SERVERS; i++) {
 			if (_servers[i].occupied == false) {
-				printf("This server joins newly, %s\n", buf);
+				//printf("This server joins newly, %s\n", buf);
 				strncpy(_servers[i].s_info.server_id, buf, id_size);
 				gettimeofday(&t1, NULL);
 				_servers[i].tcp_sock = tcp_connect(addr, opts->tcp_port);
@@ -253,8 +307,8 @@ static void check_server(char* buf, struct sockaddr_in *addr, thread_opts_t *opt
 				double bw = (double)sizeof(tmp)/(sub_timeval(&t2, &t3) * BUFSIZE * BUFSIZE);
 				check_seq = _servers[i].s_info.net_perf.slot_occupied;
 				update_serverinfo(i, latency, bw, check_seq);
-				printf("latency: %f\n", latency);
-				printf("bandwidth: %f MB/s\n", bw);
+				//printf("latency: %f\n", latency);
+				//printf("bandwidth: %f MB/s\n", bw);
 				_servers[i].occupied = true;
 				_servers[i].s_info.addr = *addr;
 				break;
